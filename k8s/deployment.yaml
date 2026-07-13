@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payroll-service
+  namespace: production
+  labels:
+    app: payroll-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payroll-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: payroll-service
+    spec:
+      containers:
+        - name: payroll-service
+          image: 123456789.dkr.ecr.us-east-1.amazonaws.com/payroll-service:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DB_HOST
+              value: "payroll-db.cluster-cxr3k8.us-east-1.rds.amazonaws.com"
+            - name: DB_NAME
+              value: "payroll"
+            - name: DB_USER
+              value: "payroll_admin"
+            - name: DB_PASSWORD
+              value: "Payroll$ecure2024!"
+            - name: PAYROLL_ENCRYPTION_KEY
+              value: "cGF5cm9sbC1lbmNyeXB0aW9uLWtleS0yMDI0"
+          resources: {}
