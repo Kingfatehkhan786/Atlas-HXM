@@ -6,7 +6,7 @@ metadata:
   labels:
     app: payroll-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: payroll-service
@@ -20,11 +20,19 @@ spec:
       labels:
         app: payroll-service
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
       containers:
         - name: payroll-service
-          image: 123456789.dkr.ecr.us-east-1.amazonaws.com/payroll-service:latest
+          # Image tag is set to a commit SHA by CI — never use :latest in production.
+          image: 123456789.dkr.ecr.us-east-1.amazonaws.com/payroll-service:REPLACE_WITH_SHA
           ports:
             - containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           env:
             - name: NODE_ENV
               value: "production"
@@ -34,8 +42,41 @@ spec:
               value: "payroll"
             - name: DB_USER
               value: "payroll_admin"
+            # Secrets are injected from a Kubernetes Secret — never hardcode credentials.
+            # Create the secret out-of-band:
+            #   kubectl create secret generic payroll-db-credentials \
+            #     --from-literal=password='<value>' -n production
             - name: DB_PASSWORD
-              value: "Payroll$ecure2024!"
+              valueFrom:
+                secretKeyRef:
+                  name: payroll-db-credentials
+                  key: password
+            # Create with:
+            #   kubectl create secret generic payroll-encryption \
+            #     --from-literal=key='<value>' -n production
             - name: PAYROLL_ENCRYPTION_KEY
-              value: "cGF5cm9sbC1lbmNyeXB0aW9uLWtleS0yMDI0"
-          resources: {}
+              valueFrom:
+                secretKeyRef:
+                  name: payroll-encryption
+                  key: key
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3

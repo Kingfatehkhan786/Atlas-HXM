@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payroll-service
+  namespace: staging
+  labels:
+    app: payroll-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payroll-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: payroll-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: payroll-service
+          image: 123456789.dkr.ecr.us-east-1.amazonaws.com/payroll-service:REPLACE_WITH_SHA
+          ports:
+            - containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          env:
+            - name: NODE_ENV
+              value: "staging"
+            - name: DB_HOST
+              # Point to a separate staging database — never share with production.
+              value: "payroll-db-staging.cluster-cxr3k8.us-east-1.rds.amazonaws.com"
+            - name: DB_NAME
+              value: "payroll"
+            - name: DB_USER
+              value: "payroll_admin"
+            # Staging secrets are separate from production.
+            # Create with:
+            #   kubectl create secret generic payroll-db-credentials \
+            #     --from-literal=password='<staging-value>' -n staging
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: payroll-db-credentials
+                  key: password
+            - name: PAYROLL_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: payroll-encryption
+                  key: key
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payroll-service
+  namespace: staging
+  labels:
+    app: payroll-service
+spec:
+  # ClusterIP in staging — no public load balancer needed.
+  # Access via port-forward or an internal ingress for testing.
+  type: ClusterIP
+  selector:
+    app: payroll-service
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 3000
